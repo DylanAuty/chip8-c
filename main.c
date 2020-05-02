@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <time.h>
 
 
 uint8_t get_hex_char();
@@ -82,21 +83,42 @@ int main(int argc, char* argv[]) {
 	uint16_t temp = 0x0000;		// A 16 bit temporary variable. Used when doing 8 bit carry-based operations.
 	uint16_t x = 0x0000;		// To be used as primary register index
 	uint16_t y = 0x0000;		// To be used as secondary register index, where needed.
+	time_t start_time = time(0);
+	time_t time_difference = 0;
+	int DT_temp = 0;
+	int ST_temp = 0;
+
+	DT = 0xFF;
+	ST = 0x13;
 
 	while(1) {
-		printf("Reading from address 0x%x\n", PC);
+		// Handle timed counters
+		time_difference = time(0) - start_time;
+		if((time_difference) >= 1) {
+			DT_temp = DT - time_difference;
+			ST_temp = ST - time_difference;
+			DT -= time_difference;
+			ST -= time_difference;
+			DT *= !(DT_temp < 0);
+			ST *= !(ST_temp < 0);
+			start_time = time(0);
+		}
+
+		printf("DT = %x, ST = %x\n", DT, ST);
+
+		//printf("Reading from address 0x%x\n", PC);
 		// Do stuff
 		raw = (uint16_t)(mem[PC] << 0x8) + (uint16_t)(mem[PC + 0x1]);
-		printf("raw = 0x%x\n", raw);
-		printf("SP = 0x%x\n", SP);
-		printf("v2 = 0x%x, V3 = 0x%x\n", V[0x2], V[0x3]);
-		printf("vf = 0x%x\n", V[0xF]);
+		//printf("raw = 0x%x\n", raw);
+		//printf("SP = 0x%x\n", SP);
+		//printf("v2 = 0x%x, V3 = 0x%x\n", V[0x2], V[0x3]);
+		//printf("vf = 0x%x\n", V[0xF]);
 
 		switch(raw & 0xF000) {
 			case 0x0000:
 				switch(raw & 0x00FF) {
 					case 0x00E0:
-						printf("0x00E0 Not implemented, this is a NOP.");
+						printf("0x00E0 Not implemented, this is a NOP.\n");
 						PC_next = PC + 0x2;
 						break;
 					case 0x00EE:	// RET, 0x00EE
