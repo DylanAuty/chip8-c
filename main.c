@@ -5,77 +5,44 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <time.h>
+#include <ncurses.h>
 
 
-uint8_t get_hex_char();
-
+int read_sprites(uint8_t *mem);
+int load_program(uint8_t *mem, char* file_name);
+void CLS(WINDOW* display_window);
+uint8_t get_hex_char(WINDOW* debug_window);
+WINDOW* create_window(int height, int width, int start_y, int start_x, int border);
+void destroy_window(WINDOW *window);
 
 int main(int argc, char* argv[]) {
 
 	// Define the RAM, 4095 (0xFFF) bytes long.
 	uint8_t mem[0x1000] = {0x00};
 
+	// Read in the sprites file to memory.
+	if(read_sprites(mem) > 0) {
+		return 1;
+	}
+
+	// Load in the program file provided, if there is one.
+	if(argc > 1) {
+		if(load_program(mem, argv[1]) > 0) {
+			return 1;
+		}
+	}
+
 	// Define the registers, 16 8 bit, 1 16 bit.
 	uint8_t V[0x10] = {0x00};		// General purpose registers
 	uint16_t I = 0x0000;			// A larger register
 
 	// Define special registers
-	uint16_t PC = 0x0000;			// Program counter
+	uint16_t PC = 0x0200;			// Program counter. Starts at 0x200.
 	uint8_t SP = 0x00;				// Stack pointer
 	uint8_t DT = 0x00;				// Delay timer, counts down at 60Hz when nonzero. Stops at zero.
 	uint8_t ST = 0x00;				// Sound timer, counts down at 60Hz when nonzero, with buzzer sounding throughout. Stops at zero.
 
 	uint16_t stack[0x10] = {0x0000};	// The stack, up to 0xf return addresses allowed.
-
-	//uint8_t disp[0x40][0x20];		// Structure for the screen. Each uint8_t is to be used as if it represents one bit only.
-
-	// Test memory initialisation.
-	mem[0x000] = 0x12;		// Jump to address 200.
-	mem[0x001] = 0x00;		
-
-	mem[0x200] = 0x30;		// Skip next instruction if V0 == 0x00.
-	mem[0x201] = 0x00;
-
-	mem[0x204] = 0x24;		// CALL 0x400
-	mem[0x205] = 0x00;
-	mem[0x400] = 0x00;		// RET
-	mem[0x401] = 0xEE;
-
-	mem[0x206] = 0x62;		// Set V2 and V3 to 13
-	mem[0x207] = 0x13;
-	mem[0x208] = 0x63;
-	mem[0x209] = 0x13;
-
-	mem[0x20A] = 0x52;		// SNE if v2 == v3;
-	mem[0x20B] = 0x30;
-
-	mem[0x20E] = 0x62;		// Set V2 and V3 to 14 and 15 respectively
-	mem[0x20F] = 0x14;
-	mem[0x210] = 0x63;
-	mem[0x211] = 0x15;
-
-	mem[0x212] = 0x52;		// SNE if v2 == v3;
-	mem[0x213] = 0x30;
-
-	mem[0x214] = 0x62;		// Set V2 and V3 to 0xFF and 0x2 respectively
-	mem[0x215] = 0xFF;
-	mem[0x216] = 0x63;
-	mem[0x217] = 0x02;
-
-	mem[0x218] = 0x82;		// ADD Vx, Vy. This should produce a carry and leave V2 = 0x1.
-	mem[0x219] = 0x34;
-
-	mem[0x21a] = 0x82;		// SHR Vx. Sets VF to LSB of Vx, divides Vx by 2, stores result in Vx.
-	mem[0x21b] = 0x36;
-
-	mem[0x21c] = 0x62;		// LD Vx, K
-	mem[0x21d] = 0xBA;
-
-	mem[0x21e] = 0xF2;		// LD B, Vx
-	mem[0x21f] = 0x33;
-
-	mem[0x220] = 0xF2;		// LD [I], Vx
-	mem[0x221] = 0x55;
 
 	// Variables for the main loop
 	uint16_t raw = 0x0000;		// Stores value read in from memory
@@ -83,13 +50,24 @@ int main(int argc, char* argv[]) {
 	uint16_t temp = 0x0000;		// A 16 bit temporary variable. Used when doing 8 bit carry-based operations.
 	uint16_t x = 0x0000;		// To be used as primary register index
 	uint16_t y = 0x0000;		// To be used as secondary register index, where needed.
-	time_t start_time = time(0);
+	time_t start_time = time(0);	// These are used for making sure the timers decrement at 60Hz
 	time_t time_difference = 0;
 	int DT_temp = 0;
 	int ST_temp = 0;
 
-	DT = 0xFF;
-	ST = 0x13;
+	// Display setup
+	int max_term_y, max_term_x;
+	initscr();
+	cbreak();
+	noecho();
+	getmaxyx(stdscr, max_term_y, max_term_x);
+	refresh();
+	WINDOW *display_window = create_window(33, 65, 0, 0, 1);
+	WINDOW *debug_window = create_window(max_term_y - 3, max_term_x - 65, 0, 65, 0);
+	scrollok(debug_window, TRUE);
+	wprintw(debug_window, "Starting. stdscr size is (%d, %d).\n", max_term_y, max_term_x);
+	wrefresh(debug_window);
+	getch();
 
 	while(1) {
 		// Handle timed counters
@@ -104,21 +82,19 @@ int main(int argc, char* argv[]) {
 			start_time = time(0);
 		}
 
-		printf("DT = %x, ST = %x\n", DT, ST);
-
-		//printf("Reading from address 0x%x\n", PC);
-		// Do stuff
+		wprintw(debug_window, "Reading from address 0x%x\n", PC);
 		raw = (uint16_t)(mem[PC] << 0x8) + (uint16_t)(mem[PC + 0x1]);
-		//printf("raw = 0x%x\n", raw);
-		//printf("SP = 0x%x\n", SP);
-		//printf("v2 = 0x%x, V3 = 0x%x\n", V[0x2], V[0x3]);
-		//printf("vf = 0x%x\n", V[0xF]);
+		wprintw(debug_window, "raw = 0x%04x\n", raw);
+		wprintw(debug_window, "SP = 0x%x\n", SP);
+		wprintw(debug_window, "v2 = 0x%x, V3 = 0x%x\n", V[0x2], V[0x3]);
+		wprintw(debug_window, "vf = 0x%x\n", V[0xF]);
+		wrefresh(debug_window);
 
+		getch();
 		switch(raw & 0xF000) {
 			case 0x0000:
 				switch(raw & 0x00FF) {
-					case 0x00E0:
-						printf("0x00E0 Not implemented, this is a NOP.\n");
+					case 0x00E0:	// CLS
 						PC_next = PC + 0x2;
 						break;
 					case 0x00EE:	// RET, 0x00EE
@@ -126,7 +102,7 @@ int main(int argc, char* argv[]) {
 						PC_next = stack[SP] + 0x02;
 						break;
 					default:
-						printf("Unknown instruction, this is a NOP.");
+						wprintw(debug_window, "Unknown instruction, this is a NOP.");
 						PC_next = PC + 0x2;
 				}
 				break;
@@ -223,7 +199,7 @@ int main(int argc, char* argv[]) {
 						V[x] = V[x] >> 0x1;
 						break;
 					default:
-						printf("Unknown instruction, this is a NOP.");
+						wprintw(debug_window, "Unknown instruction, this is a NOP.");
 						PC_next = PC + 0x2;
 				}
 				PC_next = PC + 0x2;
@@ -249,8 +225,12 @@ int main(int argc, char* argv[]) {
 				V[x] = (uint8_t)rand() & (uint8_t)(raw & 0x00FF);
 				break;
 			case 0xD000:	// DRW Vx, Vy, n
+				wprintw(debug_window, "Command not implemented. This is a NOP.\n");
+				PC_next = PC + 0x2;
 				break;
 			case 0xE000:
+				wprintw(debug_window, "Command not implemented. This is a NOP.\n");
+				PC_next = PC + 0x2;
 				break;
 			case 0xF000:	
 				x = (raw & 0x0F00) >> 0x8;
@@ -259,7 +239,7 @@ int main(int argc, char* argv[]) {
 						V[x] = DT;
 						break;
 					case 0x000A:	// LD Vx, K
-						V[x] = get_hex_char();
+						V[x] = get_hex_char(debug_window);
 						break;
 					case 0x0015:	// LD DT, Vx
 						DT = V[x];
@@ -288,34 +268,98 @@ int main(int argc, char* argv[]) {
 						}
 						break;
 					default:
-						printf("Unknown instruction, this is a NOP.\n");
+						wprintw(debug_window, "Unknown instruction, this is a NOP.\n");
 				}
 				PC_next = PC + 0x2;
 				break;
 			default:
-				printf("Default\n");
+				wprintw(debug_window, "Default\n");
 				PC_next = PC + 0x2;
 				break;
 		}
 
 		// Move on
 		PC = PC_next;
-		getchar();
+		//getchar();
 	}
-
+	
+	destroy_window(display_window);
+	destroy_window(debug_window);
+	endwin();
 	return 0;
 }
 
-uint8_t get_hex_char() {
+void CLS(WINDOW* display_window){
+	// Utility function to clear the display, redraw the border, and refresh.
+	wclear(display_window);
+	box(display_window, 0, 0);
+	wrefresh(display_window);
+	return;
+}
+
+uint8_t get_hex_char(WINDOW *debug_window) {
 	char temp;
-	printf("Waiting for input:\t");
-	while(temp = getchar()){
+	wprintw(debug_window, "Waiting for input:\t\n");
+	while(temp = getch()){
 		// Sanity check input ranges
-		printf("Received raw: 0x%x\n", (uint8_t)(temp - 0x61));
+		wprintw(debug_window, "Received raw: 0x%x\n", (uint8_t)(temp - 0x61));
 		if(temp != 0xA) {
 			return (uint8_t)(temp - 0x61);
 		} else {
-			printf("Waiting for input:\t");
+			wprintw(debug_window, "Waiting for input:\t\n");
 		}
 	}
+}
+
+WINDOW* create_window(int height, int width, int start_y, int start_x, int border) {
+	// Creates a new window of the specified dimensions and surrounds it in a box.
+	WINDOW *new_window;
+	new_window = newwin(height, width, start_y, start_x);
+	if(border == 1) {
+		box(new_window, 0, 0);
+	}
+	wrefresh(new_window);
+	return new_window;
+}
+
+void destroy_window(WINDOW *window) {
+	// Destroys a window passed to it.
+	wborder(window, ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ');
+	wrefresh(window);
+	delwin(window);
+	return;
+}
+
+int read_sprites(uint8_t *mem) {
+	// Function to read the file './sprites.ch8' into memory, starting at 0x000.
+	FILE *fp;
+	fp = fopen("./sprites.ch8", "rb");
+	if(fp == NULL) {
+		fprintf(stderr, "Error: couldn't open sprites.ch8. Exiting.\n");
+		return 1;
+	}
+	int c;
+	int max = 0x200;
+	for(int i = 0; i < max && (c = getc(fp)) != EOF; i++) {
+		mem[i] = c;
+	}
+	fclose(fp);
+	return 0;
+}
+
+int load_program(uint8_t *mem, char *file_name) {
+	FILE *fp;
+	fp = fopen(file_name, "rb");
+	if(fp == NULL) {
+		fprintf(stderr, "Error: couldn't open file: %s. Exiting.\n", file_name);
+		return 1;
+	}
+	int c;
+	int max = 0xFFF;
+	for(int i = 0x200; i < max && (c = getc(fp)) != EOF; i++) {
+		mem[i] = c;
+	}
+	fclose(fp);
+	return 0;
+	
 }
