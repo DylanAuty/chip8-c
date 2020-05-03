@@ -10,6 +10,7 @@
 
 int read_sprites(uint8_t *mem);
 int load_program(uint8_t *mem, char* file_name);
+uint8_t draw_sprite(WINDOW* display_window, WINDOW* debug_window, uint8_t *mem, uint8_t y, uint8_t x, uint16_t bytes, uint16_t I);
 void CLS(WINDOW* display_window);
 uint8_t get_hex_char(WINDOW* debug_window);
 WINDOW* create_window(int height, int width, int start_y, int start_x, int border);
@@ -62,8 +63,8 @@ int main(int argc, char* argv[]) {
 	noecho();
 	getmaxyx(stdscr, max_term_y, max_term_x);
 	refresh();
-	WINDOW *display_window = create_window(33, 65, 0, 0, 1);
-	WINDOW *debug_window = create_window(max_term_y - 3, max_term_x - 65, 0, 65, 0);
+	WINDOW *display_window = create_window(34, 66, 0, 0, 1);
+	WINDOW *debug_window = create_window(max_term_y - 3, max_term_x - 66, 0, 66, 0);
 	scrollok(debug_window, TRUE);
 	wprintw(debug_window, "Starting. stdscr size is (%d, %d).\n", max_term_y, max_term_x);
 	wrefresh(debug_window);
@@ -225,7 +226,11 @@ int main(int argc, char* argv[]) {
 				V[x] = (uint8_t)rand() & (uint8_t)(raw & 0x00FF);
 				break;
 			case 0xD000:	// DRW Vx, Vy, n
-				wprintw(debug_window, "Command not implemented. This is a NOP.\n");
+				x = (raw & 0x0F00) >> 0x8;
+				y = (raw & 0x00F0) >> 0x4;
+				wprintw(debug_window, "x = %d, y = %d\n", x, y);
+				temp = raw & 0x000F;
+				V[0xF] = draw_sprite(display_window, debug_window, mem, V[y], V[x], temp, I);
 				PC_next = PC + 0x2;
 				break;
 			case 0xE000:
@@ -287,6 +292,62 @@ int main(int argc, char* argv[]) {
 	destroy_window(debug_window);
 	endwin();
 	return 0;
+}
+
+uint8_t draw_sprite(WINDOW* display_window, WINDOW* debug_window, uint8_t *mem, uint8_t y, uint8_t x, uint16_t bytes, uint16_t I) {
+	char lookup_table[0x10][0x4] = {
+		{"    "},
+		{"   #"},
+		{"  # "},
+		{"  ##"},
+		{" #  "},
+		{" # #"},
+		{" ## "},
+		{" ###"},
+		{"#   "},
+		{"#  #"},
+		{"# # "},
+		{"# ##"},
+		{"##  "},
+		{"## #"},
+		{"### "},
+		{"####"},
+	};
+	
+	uint8_t curr_byte = 0x00;
+	uint8_t existing_char;
+	// Whatever the desired coordinates are, they're modded with the display dimensions to make
+	// the display into a torus, and then 1 is added to allow for the border of the window.
+	uint8_t collision = 0x00;		// Will be set to 0x01 when a collision happens.
+	uint8_t erasure = 0x00;	// Denotes an erasure happened.
+	uint8_t flip = 0x00;	// Denotes a pixel flip should happen.
+	uint8_t curr_y = 0x00;
+	uint8_t curr_x = 0x00;
+	for(int i = 0x0; i < bytes; i++) {
+		// Read what was there before, compute bitwise xor.
+		// If result is greater than 0, set VF (return 1). Else return 0.
+		// Draw the resulting thing onto the screen, character by character.
+		curr_byte = mem[I + i];
+		curr_y = ((y + i) % 0x20) + 1;
+		for(int j = 0x0; j < 0x8; j++) {
+			curr_x = ((x + j) % 0x40) + 1;
+			existing_char = mvwinch(display_window, curr_y, curr_x);
+			if(j < 0x4) {
+				flip = (existing_char != ' ') ^ (lookup_table[(curr_byte & 0xF0) >> 0x4][j] != ' ');
+			} else {
+				flip = (existing_char != ' ') ^ (lookup_table[(curr_byte & 0x0F)][j % 0x4] != ' ');
+			}
+			collision += (existing_char != ' ') & (existing_char != ' ');
+			//mvwaddch(display_window, curr_y, curr_x, '0');
+			if(flip > 0) {
+				mvwaddch(display_window, curr_y, curr_x, '#');
+			} else {
+				mvwaddch(display_window, curr_y, curr_x, ' ');
+			}
+		}
+	}
+	wrefresh(display_window);
+	return (collision > 0);
 }
 
 void CLS(WINDOW* display_window){
