@@ -1,10 +1,10 @@
 CC=gcc
 CFLAGS=-lncurses
 
-all: main
+all: chip8
 
-main: main.c
-	$(CC) -o main main.c $(CFLAGS)
+chip8: main.c
+	$(CC) -o chip8 main.c $(CFLAGS)
 
 clean:
-	rm ./main
+	rm ./chip8
