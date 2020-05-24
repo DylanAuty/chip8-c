@@ -12,7 +12,7 @@ int read_sprites(uint8_t *mem);
 int load_program(uint8_t *mem, char* file_name);
 uint8_t draw_sprite(WINDOW* display_window, WINDOW* debug_window, uint8_t *mem, uint8_t y, uint8_t x, uint16_t bytes, uint16_t I);
 void CLS(WINDOW* display_window);
-uint8_t get_hex_char(WINDOW* debug_window);
+uint8_t get_hex_char();
 WINDOW* create_window(int height, int width, int start_y, int start_x, int border);
 void destroy_window(WINDOW *window);
 
@@ -49,6 +49,7 @@ int main(int argc, char* argv[]) {
 	uint16_t raw = 0x0000;		// Stores value read in from memory
 	uint16_t PC_next = PC;		// Assigned to PC at the end of the main loop.
 	uint16_t temp = 0x0000;		// A 16 bit temporary variable. Used when doing 8 bit carry-based operations.
+	uint16_t input = 0x10;		// A 16 bit temporary variable. Used when doing 8 bit carry-based operations.
 	uint16_t x = 0x0000;		// To be used as primary register index
 	uint16_t y = 0x0000;		// To be used as secondary register index, where needed.
 	time_t start_time = time(0);	// These are used for making sure the timers decrement at 60Hz
@@ -70,6 +71,7 @@ int main(int argc, char* argv[]) {
 	wrefresh(debug_window);
 	getch();
 
+	nodelay(stdscr, FALSE);
 	while(1) {
 		// Handle timed counters
 		time_difference = time(0) - start_time;
@@ -89,9 +91,10 @@ int main(int argc, char* argv[]) {
 		wprintw(debug_window, "SP = 0x%x\n", SP);
 		wprintw(debug_window, "v2 = 0x%x, V3 = 0x%x\n", V[0x2], V[0x3]);
 		wprintw(debug_window, "vf = 0x%x\n", V[0xF]);
+		
+		input = get_hex_char();
+		wprintw(debug_window, "input: %x\n", input);
 		wrefresh(debug_window);
-
-		getch();
 		switch(raw & 0xF000) {
 			case 0x0000:
 				switch(raw & 0x00FF) {
@@ -244,7 +247,14 @@ int main(int argc, char* argv[]) {
 						V[x] = DT;
 						break;
 					case 0x000A:	// LD Vx, K
-						V[x] = get_hex_char(debug_window);
+						nodelay(stdscr, FALSE);
+						while(temp = get_hex_char()) {
+							if(temp != 0x10) {
+								V[x] = temp;
+								break;
+							}
+						}
+						nodelay(stdscr, TRUE);
 						break;
 					case 0x0015:	// LD DT, Vx
 						DT = V[x];
@@ -358,17 +368,45 @@ void CLS(WINDOW* display_window){
 	return;
 }
 
-uint8_t get_hex_char(WINDOW *debug_window) {
+uint8_t get_hex_char() {
+	// Sanity check input ranges
 	char temp;
-	wprintw(debug_window, "Waiting for input:\t\n");
-	while(temp = getch()){
-		// Sanity check input ranges
-		wprintw(debug_window, "Received raw: 0x%x\n", (uint8_t)(temp - 0x61));
-		if(temp != 0xA) {
-			return (uint8_t)(temp - 0x61);
-		} else {
-			wprintw(debug_window, "Waiting for input:\t\n");
-		}
+	temp = getch();
+	switch(temp) {
+		case '1':
+			return 0x1;
+		case '2':
+			return 0x2;
+		case '3':
+			return 0x3;
+		case 'q':
+			return 0x4;
+		case 'w':
+			return 0x5;
+		case 'e':
+			return 0x6;
+		case 'a':
+			return 0x7;
+		case 's':
+			return 0x8;
+		case 'd':
+			return 0x9;
+		case 'x':
+			return 0x0;
+		case 'z':
+			return 0xa;
+		case 'c':
+			return 0xb;
+		case '4':
+			return 0xc;
+		case 'r':
+			return 0xd;
+		case 'f':
+			return 0xe;
+		case 'v':
+			return 0xf;
+		default:
+			return 0x10;	// If this is returned it denotes an invalid key being pressed.
 	}
 }
 
