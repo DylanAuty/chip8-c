@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <time.h>
+#include <unistd.h>
 #include <ncurses.h>
 
 
@@ -57,6 +58,7 @@ int main(int argc, char* argv[]) {
 	int DT_temp = 0;
 	int ST_temp = 0;
 
+	int debug_ticker = 0;		// To print in debug window, should show cycles passing.
 	// Display setup
 	int max_term_y, max_term_x;
 	initscr();
@@ -70,9 +72,12 @@ int main(int argc, char* argv[]) {
 	wprintw(debug_window, "Starting. stdscr size is (%d, %d).\n", max_term_y, max_term_x);
 	wrefresh(debug_window);
 	getch();
+	curs_set(0);
 
-	nodelay(stdscr, FALSE);
+	nodelay(stdscr, TRUE);
 	while(1) {
+		//usleep(4000);
+
 		// Handle timed counters
 		time_difference = time(0) - start_time;
 		if((time_difference) >= 1) {
@@ -84,17 +89,18 @@ int main(int argc, char* argv[]) {
 			ST *= !(ST_temp < 0);
 			start_time = time(0);
 		}
-
-		wprintw(debug_window, "Reading from address 0x%x\n", PC);
 		raw = (uint16_t)(mem[PC] << 0x8) + (uint16_t)(mem[PC + 0x1]);
+		/*
+		wprintw(debug_window, "Reading from address 0x%x\n", PC);
+		wprintw(debug_window, "=== c: %d\n", debug_ticker);
 		wprintw(debug_window, "raw = 0x%04x\n", raw);
-		wprintw(debug_window, "SP = 0x%x\n", SP);
-		wprintw(debug_window, "v2 = 0x%x, V3 = 0x%x\n", V[0x2], V[0x3]);
-		wprintw(debug_window, "vf = 0x%x\n", V[0xF]);
+		wprintw(debug_window, "DT = 0x%04x\n", DT);
+		debug_ticker++;
 		
-		input = get_hex_char();
 		wprintw(debug_window, "input: %x\n", input);
 		wrefresh(debug_window);
+		*/
+		input = get_hex_char();
 		switch(raw & 0xF000) {
 			case 0x0000:
 				switch(raw & 0x00FF) {
@@ -128,7 +134,7 @@ int main(int argc, char* argv[]) {
 				break;
 			case 0x4000:	// SNE Vx, 0x4xkk
 				x = (raw & 0x0F00) >> 0x8;
-				if(V[x >> 0x8] != (raw & 0x00FF)) {
+				if(V[x] != (raw & 0x00FF)) {
 					PC_next = PC + 0x4;
 				} else {
 					PC_next = PC + 0x2;
@@ -200,7 +206,7 @@ int main(int argc, char* argv[]) {
 						break;
 					case 0x000E:	// SHL Vx, {, Vy}
 						V[0xF] = (V[x] & 0x80) >> 0x7;
-						V[x] = V[x] >> 0x1;
+						V[x] = V[x] << 0x1;
 						break;
 					default:
 						wprintw(debug_window, "Unknown instruction, this is a NOP.");
@@ -231,7 +237,6 @@ int main(int argc, char* argv[]) {
 			case 0xD000:	// DRW Vx, Vy, n
 				x = (raw & 0x0F00) >> 0x8;
 				y = (raw & 0x00F0) >> 0x4;
-				wprintw(debug_window, "x = %d, y = %d\n", x, y);
 				temp = raw & 0x000F;
 				V[0xF] = draw_sprite(display_window, debug_window, mem, V[y], V[x], temp, I);
 				PC_next = PC + 0x2;
