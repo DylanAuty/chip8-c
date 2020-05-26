@@ -1,6 +1,6 @@
 # chip8-c
 
-A Chip-8 emulator written in C, using ncurses for the display. Written as a little side project, so there are some bizarre design decisions in here. I should have written this in C++ and made the processor a class. Oh well.
+A Chip-8 emulator written in C, using ncurses for the display. Written as a little side project, so there are some quick and dirty design decisions in here. It wuold have been better to use a struct for the processor, or to use C++ and make the whole thing object-oriented... but I didn't. Oh well.
 
 Although it's more efficient to use a normal `int` for most things, I've decided to implement everything "internal" to the Chip-8 as being the exact width it should be. Whether this is a _good_ decision is another matter, but I felt it was better to be as accurate as I could to the specification, at the expense of a little bit of overhead for the host processor to fiddle around with whatever slicing and shifting operations it needs to do to make this work.
 
